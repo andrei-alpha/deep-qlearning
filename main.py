@@ -6,8 +6,8 @@ from connect4 import Connect4
 from deepq import QLearn
 from agents import MinMax, RandomPlayer, HumanPlayer
 
-train_games = 1000
-stats_frequency = 1000
+train_games = 2000
+stats_frequency = 200
 
 class Scorer():
   def __init__(self, frequency):
@@ -58,7 +58,7 @@ def play_game(players, sim, scorer, display=False):
 
 if __name__ == "__main__":
   sim = Connect4()
-  players = QLearn("Vasile"), QLearn("Gigel")
+  players = QLearn("Vasile"), RandomPlayer("Gigel")
 
   scorer = Scorer(stats_frequency)
   for step in xrange(train_games):
