@@ -1,7 +1,10 @@
 import random
 
-class QLearn():
-  def __init__(self, epsilon=0.01, alpha=0.2, gamma=0.9):
+from agents import Agent
+
+class QLearn(Agent):
+  def __init__(self, name="QLearn", epsilon=0.005, alpha=0.2, gamma=0.9):
+    Agent.__init__(self, name)
     self.epsilon = epsilon
     self.gamma = gamma
     self.alpha = alpha
@@ -26,17 +29,12 @@ class QLearn():
       maxqnew = reward
     self.learnQ(state1, action1, reward, reward + self.gamma*maxqnew)
 
-  def choose_action(self, state, actions, display=False):
+  def choose_action(self, sim):
+    state, actions = sim.get_state(), sim.get_actions()
     action = None
     if random.random() < self.epsilon:
-      if display:
-        print 'Pick randomly :)'
       action = random.choice(actions)
     else:
-      if display:
-        for a in actions:
-          print a, self.getQ(state, a)
-
       q = [self.getQ(state, a) for a in actions]
       maxQ = max(q)
       count = q.count(maxQ)

@@ -1,86 +1,68 @@
+import itertools
 import random
 
 from tictactoe import TicTacToe
 from connect4 import Connect4
 from deepq import QLearn
-from board_game_ai import MinMax
+from agents import MinMax, RandomPlayer, HumanPlayer
 
-train_steps = 10000
-human_player = False
-stats_frequency = 10
+train_games = 1000
+stats_frequency = 1000
 
 class Scorer():
-  def __init__(self):
+  def __init__(self, frequency):
     self.results = []
+    self.frequency = frequency
     self.games = 0
 
   def count(self, val, n):
     return len(filter(lambda x: x == val, self.results[len(self.results)-n:]))
 
-  def record_result(self, score):
-    self.results.append(score)
+  def record_result(self, players, result):
+    self.results.append(result)
     self.games += 1
     if self.games % stats_frequency == 0:
-      p1_wins = self.count(1, stats_frequency) * 100 / stats_frequency
-      p2_wins = self.count(2, stats_frequency) * 100 / stats_frequency
-      print 'Games: %d QLearn wins: %d%s Random play wins: %d%s' % (self.games, p1_wins, '%', p2_wins, '%')
+      p1_wins = self.count(1, self.frequency) * 100 / self.frequency
+      p2_wins = self.count(2, self.frequency) * 100 / self.frequency
+      print 'Games: %d %s wins: %d%s %s wins: %d%s' % (self.games,
+        players[0].name, p1_wins, '%', players[1].name, p2_wins, '%')
 
-def game_ended(ai, sim, player, reward, reward_draw=0):
-  global human_player
-  if not sim.get_actions():
-    if reward:
-      if player == 1: # AI won this game
-        if human_player:
-          print 'AI won!'
-        ai.learn(state, action, reward)
-      else:
-        ai.learn(state, action, -reward)
-      scorer.record_result(player)
-      if human_player:
-        print 'You have won!'
-      if step > train_steps:
-        human_player = True
+def play_game(players, sim, scorer, display=False):
+  """Clasic turn based game loop."""
+  turn = 0
+  prev_state, prev_action = None, None
+  while True:
+    # Get available actions and current state from emulator
+    state, actions = sim.get_state(), sim.get_actions()
+    action = players[turn].choose_action(sim)
+    reward = sim.perform_action((action, turn + 1))
+
+    if not sim.get_actions(): # Game has ended
+      players[turn].learn(state, action, reward)
+      players[turn ^ 1].learn(prev_state, prev_action, -reward)
+      if reward: # Current player won the game
+        players[turn].notify(sim, "win")
+        players[turn ^ 1].notify(sim, "lose")
+        scorer.record_result(players, turn + 1)
+      else: # This is a draw
+        players[turn].notify(sim, "draw")
+        players[turn ^ 1].notify(sim, "draw")
+        scorer.record_result(players, 0)
+      break
     else:
-      # This is a draw
-      if human_player:
-        print 'This was a draw!'
-      ai.learn(state, action, reward_draw)
-      scorer.record_result(0)
-    sim.reset()
-    return True
-  return False
+      players[turn ^ 1].learn(prev_state, prev_action, 0,
+          sim.get_state(), sim.get_actions())
+    prev_state, prev_action = state, action
+    turn = turn ^ 1
+  sim.reset()
 
 if __name__ == "__main__":
-  sim = Connect4() # TicTacToe()
-  ai = QLearn()
-  minmax = MinMax()
+  sim = Connect4()
+  players = QLearn("Vasile"), QLearn("Gigel")
 
-  scorer = Scorer()
-  actions, state, new_actions, new_state = None, None, None, None
-  for step in xrange(train_steps * 2):
-    # Get available actions and current state from emulator
-    new_state, new_actions = sim.get_state(), sim.get_actions()
-
-    actions = new_actions
-    state = new_state
-    action = ai.choose_action(state, actions)
-    reward = sim.perform_action((action, 1))
-
-    if human_player:
-      sim.display()
-
-    if game_ended(ai, sim, 1, reward, reward*0.5):
-      continue
-    else:
-      # Just pick a random move
-      if not human_player:
-        # new_action = random.choice(sim.get_actions())
-        new_action = minmax.choose_action(sim)
-      else:
-        new_action = sim.read_action('Player')
-
-      reward = sim.perform_action((new_action, 2))
-      if game_ended(ai, sim, 2, reward, reward*0.5):
-        continue
-      else:
-        ai.learn(state, action, 0, sim.get_state(), sim.get_actions())
+  scorer = Scorer(stats_frequency)
+  for step in xrange(train_games):
+    play_game(players, sim, scorer)
+  human_player = HumanPlayer("Player")
+  while True:
+    play_game([players[0], human_player], sim, scorer, display=True)
