@@ -29,6 +29,17 @@ class Connect4(LineBoardGame):
         break
     return self.collect_reward()
 
+  def reverse_action(self, action):
+    col, value = action
+    assert col >= 0 and col < self.width
+    assert value in self.values
+    for row in xrange(self.height):
+      if self.state[row][col] == value:
+        self.state[row][col] = 0
+        self.final = False
+        return
+    assert False
+
 if __name__ == "__main__":
   sim = Connect4()
   player = 1

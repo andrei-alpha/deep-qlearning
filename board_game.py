@@ -52,6 +52,9 @@ class LineBoardGame(object):
   def perform_action(self):
     assert not 'You should override this method'
 
+  def reverse_action(self):
+    assert not 'You should override this method'
+
   def display(self):
     print ' ' * 3 + ' '.join([' %d ' % x for x in xrange(1, self.width + 1)]) 
     print ' ' * 2 + '-' * (len(self.state[0]) * 4 + 1)

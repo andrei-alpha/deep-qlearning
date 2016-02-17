@@ -3,9 +3,11 @@ import random
 from tictactoe import TicTacToe
 from connect4 import Connect4
 from deepq import QLearn
+from board_game_ai import MinMax
 
-train_steps = 100000
+train_steps = 10000
 human_player = False
+stats_frequency = 10
 
 class Scorer():
   def __init__(self):
@@ -18,12 +20,12 @@ class Scorer():
   def record_result(self, score):
     self.results.append(score)
     self.games += 1
-    if self.games % 1000 == 0:
-      p1_wins = self.count(1, 1000) / 10
-      p2_wins = self.count(2, 1000) / 10
+    if self.games % stats_frequency == 0:
+      p1_wins = self.count(1, stats_frequency) * 100 / stats_frequency
+      p2_wins = self.count(2, stats_frequency) * 100 / stats_frequency
       print 'Games: %d QLearn wins: %d%s Random play wins: %d%s' % (self.games, p1_wins, '%', p2_wins, '%')
 
-def game_ended(sim, player, reward, reward_draw=0):
+def game_ended(ai, sim, player, reward, reward_draw=0):
   global human_player
   if not sim.get_actions():
     if reward:
@@ -51,6 +53,7 @@ def game_ended(sim, player, reward, reward_draw=0):
 if __name__ == "__main__":
   sim = Connect4() # TicTacToe()
   ai = QLearn()
+  minmax = MinMax()
 
   scorer = Scorer()
   actions, state, new_actions, new_state = None, None, None, None
@@ -66,17 +69,18 @@ if __name__ == "__main__":
     if human_player:
       sim.display()
 
-    if game_ended(sim, 1, reward, reward*0.5):
+    if game_ended(ai, sim, 1, reward, reward*0.5):
       continue
     else:
       # Just pick a random move
       if not human_player:
-        new_action = random.choice(sim.get_actions())
+        # new_action = random.choice(sim.get_actions())
+        new_action = minmax.choose_action(sim)
       else:
         new_action = sim.read_action('Player')
 
       reward = sim.perform_action((new_action, 2))
-      if game_ended(sim, 2, reward, reward*0.5):
+      if game_ended(ai, sim, 2, reward, reward*0.5):
         continue
       else:
         ai.learn(state, action, 0, sim.get_state(), sim.get_actions())
