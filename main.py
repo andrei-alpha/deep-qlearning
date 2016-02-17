@@ -4,10 +4,11 @@ import random
 from tictactoe import TicTacToe
 from connect4 import Connect4
 from deepq import QLearn
+from brain import Brain
 from agents import MinMax, RandomPlayer, HumanPlayer
 
 train_games = 2000
-stats_frequency = 200
+stats_frequency = 100
 
 class Scorer():
   def __init__(self, frequency):
@@ -29,36 +30,37 @@ class Scorer():
 
 def play_game(players, sim, scorer, display=False):
   """Clasic turn based game loop."""
-  turn = 0
+  idx = 0
   prev_state, prev_action = None, None
   while True:
     # Get available actions and current state from emulator
     state, actions = sim.get_state(), sim.get_actions()
-    action = players[turn].choose_action(sim)
-    reward = sim.perform_action((action, turn + 1))
+    action = players[idx].choose_action(sim)
+    turn = sim.turn
+    reward = sim.perform_action((action, turn))
 
     if not sim.get_actions(): # Game has ended
-      players[turn].learn(state, action, reward)
-      players[turn ^ 1].learn(prev_state, prev_action, -reward)
+      players[idx].learn( sim.new_state(state, (action, turn)), reward)
+      players[idx ^ 1].learn( sim.new_state(prev_state, (prev_action, sim.turn)), -reward)
       if reward: # Current player won the game
-        players[turn].notify(sim, "win")
-        players[turn ^ 1].notify(sim, "lose")
-        scorer.record_result(players, turn + 1)
+        players[idx].notify(sim, "win")
+        players[idx ^ 1].notify(sim, "lose")
+        scorer.record_result(players, turn)
       else: # This is a draw
-        players[turn].notify(sim, "draw")
-        players[turn ^ 1].notify(sim, "draw")
+        players[idx].notify(sim, "draw")
+        players[idx ^ 1].notify(sim, "draw")
         scorer.record_result(players, 0)
       break
     else:
-      players[turn ^ 1].learn(prev_state, prev_action, 0,
-          sim.get_state(), sim.get_actions())
+      players[idx ^ 1].learn( sim.new_state(state, (action, turn)), 0)
     prev_state, prev_action = state, action
-    turn = turn ^ 1
+    idx = idx ^ 1
   sim.reset()
 
 if __name__ == "__main__":
   sim = Connect4()
-  players = QLearn("Vasile"), RandomPlayer("Gigel")
+  brain = Brain(sim.width, sim.height)
+  players = QLearn(brain, "Vasile"), RandomPlayer("Gigel")
 
   scorer = Scorer(stats_frequency)
   for step in xrange(train_games):

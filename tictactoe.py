@@ -25,6 +25,7 @@ class TicTacToe(LineBoardGame):
     assert value in self.values
     assert self.state[x][y] == 0
     self.state[x][y] = value
+    self.turn = self.next_turn()
     return self.collect_reward()
 
   def reverse_action(self, action):
@@ -34,6 +35,7 @@ class TicTacToe(LineBoardGame):
     assert self.state[x][y] == value
     self.state[x][y] = 0
     self.final = False
+    self.next_turn()
 
 if __name__ == "__main__":
   sim = TicTacToe()

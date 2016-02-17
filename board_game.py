@@ -8,6 +8,7 @@ class LineBoardGame(object):
     self.state = [[0 for _ in xrange(self.width)] for _ in xrange(self.height)]
     # Two player game, the board can have either 0, 1 or 2
     self.values = [1, 2]
+    self.turn = 1
     self.encoding = {0: ' ', 1: 'X', 2: '0'}
 
   def _check_range(self, xxs, yys):
@@ -35,9 +36,13 @@ class LineBoardGame(object):
             return 100
     return 0
 
+  def next_turn(self):
+    return (1 if self.turn == 2 else 2)
+
   def reset(self):
     # Reset the board
     self.final = False
+    self.turn = 1
     self.state = [[0 for _ in xrange(self.width)] for _ in xrange(self.height)]
 
   def get_state(self):
@@ -53,6 +58,10 @@ class LineBoardGame(object):
     assert not 'You should override this method'
 
   def reverse_action(self):
+    assert not 'You should override this method'
+
+  @staticmethod
+  def new_state(state, action):
     assert not 'You should override this method'
 
   def display(self):

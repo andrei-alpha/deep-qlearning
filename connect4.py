@@ -27,7 +27,19 @@ class Connect4(LineBoardGame):
       if not self.state[row][col]:
         self.state[row][col] = value
         break
+    self.turn = self.next_turn()
     return self.collect_reward()
+
+  @staticmethod
+  def new_state(state, action):
+    col, value = action
+    #assert col >= 0 and col < len(
+    #assert value in self.values
+    #assert not state[0][col]
+    for row in reversed(xrange(len(state))):
+      if not state[row][col]:
+        x = (state[row][:col] + (value,) + state[row][col+1:],)
+        return tuple(state[:row] + x + state[row+1:])
 
   def reverse_action(self, action):
     col, value = action
@@ -37,6 +49,7 @@ class Connect4(LineBoardGame):
       if self.state[row][col] == value:
         self.state[row][col] = 0
         self.final = False
+        self.turn = self.next_turn()
         return
     assert False
 
