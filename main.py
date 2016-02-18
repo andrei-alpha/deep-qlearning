@@ -7,7 +7,7 @@ from deepq import QLearn
 from brain import Brain
 from agents import MinMax, RandomPlayer, HumanPlayer
 
-train_games = 2000
+train_games = 20000
 stats_frequency = 100
 
 class Scorer():
@@ -40,8 +40,8 @@ def play_game(players, sim, scorer, display=False):
     reward = sim.perform_action((action, turn))
 
     if not sim.get_actions(): # Game has ended
-      players[idx].learn( sim.new_state(state, (action, turn)), reward)
-      players[idx ^ 1].learn( sim.new_state(prev_state, (prev_action, sim.turn)), -reward)
+      players[idx].learn(sim.get_state(), reward)
+      players[idx ^ 1].learn(state, -reward)
       if reward: # Current player won the game
         players[idx].notify(sim, "win")
         players[idx ^ 1].notify(sim, "lose")
@@ -52,7 +52,9 @@ def play_game(players, sim, scorer, display=False):
         scorer.record_result(players, 0)
       break
     else:
-      players[idx ^ 1].learn( sim.new_state(state, (action, turn)), 0)
+      this_state = sim.get_state()
+      next_states = [sim.new_state(this_state, (a, sim.turn)) for a in sim.get_actions()]
+      players[idx ^ 1].learn(state, 0, next_states)
     prev_state, prev_action = state, action
     idx = idx ^ 1
   sim.reset()
@@ -60,7 +62,7 @@ def play_game(players, sim, scorer, display=False):
 if __name__ == "__main__":
   sim = Connect4()
   brain = Brain(sim.width, sim.height)
-  players = QLearn(brain, "Vasile"), RandomPlayer("Gigel")
+  players = QLearn(brain, "DaQ"), MinMax("Max", max_level=3)
 
   scorer = Scorer(stats_frequency)
   for step in xrange(train_games):
