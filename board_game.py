@@ -21,10 +21,18 @@ class LineBoardGame(object):
       return 0
     return self.state[x][y] != 0 and all([self.state[xx][yy] == self.state[x][y] for (xx,yy) in zip(xxs, yys)])
 
-  def collect_reward(self):
+  def collect_reward(self, last_x=None, last_y=None):
     # Check for any line of <win_line> values of the same type
     xx = [-1, -1, 0, 1, 1, 1, 0, -1]
     yy = [0, 1, 1, 1, 0, -1, -1, -1]
+    # This is the last move so the wining line must start from here
+    if last_x and last_y:
+      for k in xrange(8):
+        if self._check_line(last_x, last_y, xx[k], yy[k]):
+          self.final = True
+          return 100
+      return 0
+
     for x in xrange(self.height):
       for y in xrange(self.width):
         if self.state[x][y] == 0:

@@ -1,22 +1,67 @@
+import os
+import time
+
 import numpy as np
 import tensorflow as tf
 
+NUM_CORES = 8
+TENSORFLOW_CONFIG = tf.ConfigProto(inter_op_parallelism_threads=NUM_CORES, 
+  intra_op_parallelism_threads=NUM_CORES)
+
 class Brain(object):
-  def __init__(self, width, height, learning_rate=0.01, decay=0.9):
+  def __init__(self, width=None, height=None, output_size=None, learning_rate=0.01, decay=0.9, load_path=None):
     self.width = width
     self.height = height
-    self.output_size = 1
-    # tf Graph input
-    self.X = tf.placeholder(tf.float32, [None, self.height, self.width])
-    self.Y = tf.placeholder(tf.float32, [None, self.output_size])
-    self.dropout = tf.placeholder(tf.float32)
-    self.init_weights()
-    self.pred = self.build_network(self.X, self.dropout)
-    # Define loss and optimizer
-    self.loss = tf.reduce_mean(tf.square(self.Y - self.pred))
-    self.train_opt = tf.train.RMSPropOptimizer(learning_rate=learning_rate, decay=decay).minimize(self.loss)
-    self.sess = tf.Session()
-    self.sess.run(tf.initialize_all_variables())
+    self.output_size = output_size
+
+    # Hack to fix this problem: https://github.com/tensorflow/tensorflow/commit/430a054d6134f00e5188906bc4080fb7c5035ad5
+    self.graph = tf.Graph()
+    self.sess = tf.Session(graph=self.graph, config=TENSORFLOW_CONFIG)
+
+    # Currently we cannot load both the model and the same weights from disk
+
+    with self.graph.as_default():
+      # Initialize the weights
+      self.init_weights()
+
+      # tf Graph input
+      self.X = tf.placeholder(tf.float32, [None, self.height, self.width], name="X")
+      self.Y = tf.placeholder(tf.float32, [None, 1], name="Y")
+      self.dropout = tf.placeholder(tf.float32, name="dropout")
+      
+      # Softmax computes normalized scores for each action set
+      self.actions_score = self.build_network(self.X, self.dropout)
+      # We know the reward for only for one action in each state of the training set
+      self.actions_mask = tf.placeholder(tf.float32, [None, self.output_size], name="actions_mask")
+      self.masked_actions_score = tf.mul(self.actions_score, self.actions_mask, name="masked_actions_score")
+      self.predicted_action = tf.argmax(self.masked_actions_score, dimension=1, name="predicted_actions")
+
+      # Define loss and optimizer
+      self.loss = tf.reduce_mean(tf.square(self.Y - self.masked_actions_score))
+      self.train_opt = tf.train.RMSPropOptimizer(learning_rate=learning_rate, decay=decay, name="train_opt").minimize(self.loss)
+
+      # Initialize all variables
+      self.sess.run(tf.initialize_all_variables())
+
+  def load_model(self, save_path):
+    with self.graph.as_default():
+      # Initialize the weights
+      self.init_weights()
+
+      graph_def = tf.GraphDef()
+      graph_def.ParseFromString(open(os.path.join(save_path, 'model.pb'), 'r').read())
+      tf.import_graph_def(graph_def, name='')
+
+      # Restore all the variables used for training and eval
+      self.X = self.sess.graph.get_tensor_by_name("X:0")
+      self.Y = self.sess.graph.get_tensor_by_name("Y:0")
+      self.dropout = self.sess.graph.get_tensor_by_name("dropout:0")
+      self.actions_mask = self.sess.graph.get_tensor_by_name("actions_mask:0")
+      self.masked_actions_score = self.sess.graph.get_tensor_by_name("masked_actions_score:0")
+
+      # Load saved weights from checkpoint
+      saver = tf.train.Saver(tf.all_variables())
+      saver.restore(self.sess, os.path.join(save_path, 'checkpoint.data'))
 
   def init_weights(self):
     # Store layers weight & bias
@@ -27,6 +72,8 @@ class Brain(object):
       'wc2': tf.Variable(tf.random_normal([4, 4, 32, 64], stddev=0.1)),
       # fully connected, 7*7*64 inputs, 1024 outputs
       'wd1': tf.Variable(tf.random_normal([self.height * self.width * 64, 1024], stddev=0.1)),
+      # fully connected, 1024 inputs, 1024 outputs
+      'wd2': tf.Variable(tf.random_normal([1024, 1024], stddev=0.1)),
       # 1024 inputs, 10 outputs (class prediction)
       'out': tf.Variable(tf.random_normal([1024, self.output_size], stddev=0.1))
     }
@@ -35,6 +82,7 @@ class Brain(object):
       'bc1': tf.Variable(tf.zeros([32])),
       'bc2': tf.Variable(tf.zeros([64])),
       'bd1': tf.Variable(tf.zeros([1024])),
+      'bd2': tf.Variable(tf.zeros([1024])),
       'out': tf.Variable(tf.zeros([self.output_size]))
     }
 
@@ -71,23 +119,64 @@ class Brain(object):
     # Apply Dropout
     drop2 = tf.nn.dropout(norm2, dropout)
 
-    # Fully connected layer
+    # Fully connected layers
     # Reshape conv2 output to fit dense layer input
     dense1 = tf.reshape(drop2, [-1, self.weights['wd1'].get_shape().as_list()[0]]) 
     # Relu activation
     dense1 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd1']), self.biases['bd1']))
+    dense2 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd2']), self.biases['bd2']))
 
-    # Output, value prediction
-    out = tf.add(tf.matmul(dense1, self.weights['out']), self.biases['out'])
-    return out
+    # Return the Q-value prediction for each action
+    return tf.add(tf.matmul(dense2, self.weights['out']), self.biases['out'])
 
-  def train(self, (observations, rewards)):
-    rewards = [[x] for x in rewards]
-    observations = [[list(x) for x in obs] for obs in observations]
-    self.sess.run(self.train_opt, feed_dict={self.X: observations,
-        self.Y: rewards, self.dropout: 0.8})
+  def save(self, path):
+    """Save the current model as a serialized proto for later use."""
+    with  self.graph.as_default():
+      folder = "model_" + str(int(time.time() * 1000) - 1456170641124)
+      full_path = os.path.join(path, folder)
+      tf.train.write_graph(self.sess.graph_def, full_path, "model.pb", False)
+      saver = tf.train.Saver(tf.all_variables())
+      saver.save(self.sess, os.path.join(full_path, "checkpoint.data"))
+      return full_path
 
-  def eval(self, observation):
-    observation = [list(x) for x in observation]
-    res = self.sess.run(self.pred, feed_dict={self.X: observation, self.dropout: 1.0})
-    return res[0];
+  def train(self, (observations, actions_mask, rewards)):
+    if not self.train_opt: # Don't train loaded models
+      return
+
+    with self.graph.as_default():
+      rewards = [[x] for x in rewards]
+      observations = [[list(x) for x in obs] for obs in observations]
+      actions_mask = [list(x) for x in actions_mask]
+      #mask = []
+      #for x, reward in enumerate(rewards):
+      #  mask.append([reward if y else 0 for y in actions_mask[x]])
+      #rewards = mask
+
+      #print ''
+      #for line in observations[0]:
+      #  print line
+      #print actions_mask[0]
+      #print rewards[0]
+
+      self.sess.run(self.train_opt, feed_dict={self.X: observations,
+          self.Y: rewards, self.dropout: 0.8, self.actions_mask: actions_mask})
+
+  def eval(self, observation, actions_mask):
+    with self.graph.as_default():
+      observation = [[list(x) for x in observation]]
+      actions_mask = [actions_mask]
+
+      ret = self.sess.run(self.masked_actions_score, feed_dict={self.X: observation, 
+          self.dropout: 1.0, self.actions_mask: actions_mask})
+
+      if False:
+        print 'scores:'
+        for idx, x in enumerate(ret[0]):
+          if idx and idx % 4 == 0:
+            print '' 
+          print "%.3f" % x,
+        print ''
+        for line in observation[0]:
+          print line
+        print '\n'
+      return ret[0]

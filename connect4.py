@@ -3,6 +3,7 @@ from board_game import LineBoardGame
 
 class Connect4(LineBoardGame):
   def __init__(self, board_width=7, board_height=6, win_length=4):
+    self.actions_count = board_width
     LineBoardGame.__init__(self, board_width, board_height, win_length)
 
   def read_action(self, player_name):
@@ -18,6 +19,25 @@ class Connect4(LineBoardGame):
           actions.append(col)
     return actions
 
+  def get_actions_mask_from_action(self, action):
+    actions = [0] * self.width
+    actions[action] = 1
+    return actions
+
+  def get_action_from_index(self, index):
+    return index
+
+  def get_actions_mask(self):
+    if self.final:
+      return [0] * self.width
+    actions = []
+    for y in xrange(self.width):
+      if self.state[0][y] == 0:
+        actions.append(1)
+      else:
+        actions.append(0)
+    return actions
+
   def perform_action(self, action):
     col, value = action
     assert col >= 0 and col < self.width
@@ -26,20 +46,21 @@ class Connect4(LineBoardGame):
     for row in reversed(xrange(self.height)):
       if not self.state[row][col]:
         self.state[row][col] = value
+        reward = self.collect_reward()
         break
     self.turn = self.next_turn()
-    return self.collect_reward()
+    return reward
 
-  @staticmethod
-  def new_state(state, action):
-    col, value = action
-    #assert col >= 0 and col < len(
-    #assert value in self.values
-    #assert not state[0][col]
-    for row in reversed(xrange(len(state))):
-      if not state[row][col]:
-        x = (state[row][:col] + (value,) + state[row][col+1:],)
-        return tuple(state[:row] + x + state[row+1:])
+  #@staticmethod
+  #def new_state(state, action):
+  #  col, value = action
+  #  #assert col >= 0 and col < len(
+  #  #assert value in self.values
+  #  #assert not state[0][col]
+  #  for row in reversed(xrange(len(state))):
+  #    if not state[row][col]:
+  #      x = (state[row][:col] + (value,) + state[row][col+1:],)
+  #      return tuple(state[:row] + x + state[row+1:])
 
   def reverse_action(self, action):
     col, value = action
