@@ -3,11 +3,19 @@ import numpy as np
 
 from agents import Agent
 
+
 class QLearn(Agent):
-  def __init__(self, sim, brain, name="QLearn",
-      train_every_nth=5, train_batch_size=30,
-      max_experience=100000, exploration_period=10000,
-      epsilon_final=0.01, discount_factor=0.5):
+
+  def __init__(self,
+               sim,
+               brain,
+               name="QLearn",
+               train_every_nth=5,
+               train_batch_size=30,
+               max_experience=100000,
+               exploration_period=10000,
+               epsilon_final=0.01,
+               discount_factor=0.5):
     Agent.__init__(self, name)
     self.sim = sim
     self.brain = brain
@@ -50,26 +58,24 @@ class QLearn(Agent):
     action = None
     self.actions_executed += 1
     self.training_step()
-    
-    epsilon_current = self.linear_annealing(1.0, self.epsilon_final,
-        self.actions_executed, self.exploration_period)
+
+    epsilon_current = self.linear_annealing(
+        1.0, self.epsilon_final, self.actions_executed, self.exploration_period)
     if random.random() < epsilon_current:
       action = random.choice(actions)
     else:
+      # Ignore actions with score 0, those are not allowed in this state
       q = self.getQ(state, actions_mask)
-      maxQ = max(q)
-      if len(q) == 0:
-        print 'Empty predictions ....'
-        return random.choice(actions)
+      maxQ = max(filter(lambda x: x, q))
       if q.count(maxQ) > 1:
         best = [i for i in xrange(len(actions_mask)) if q[i] == maxQ]
         i = random.choice(best)
       else:
         i = q.index(maxQ)
       action = sim.get_action_from_index(i)
-      if not action in actions:
-        print 'Picked wrong action!'
-        return random.choice(actions)
+      assert action in actions, (
+          "Picked wrong action. (q: %s mask: %s "
+          "actions: %s action: %s)") % (q, actions_mask, actions, action)
     return action
 
   def training_step(self):

@@ -1,13 +1,21 @@
-import numpy as np
 from board_game import LineBoardGame
 
 class Connect4(LineBoardGame):
+  """The classic connect4 game."""
+
   def __init__(self, board_width=7, board_height=6, win_length=4):
     self.actions_count = board_width
     LineBoardGame.__init__(self, board_width, board_height, win_length)
 
   def read_action(self, player_name):
-    return int(raw_input("%s: " % player_name)) - 1
+    try:
+      x = int(raw_input("%s: " % player_name)) - 1
+      if not x in self.get_actions():
+        raise ValueError
+      return x
+    except ValueError:
+      print 'Invalid move! Allowed actions: %s', self.get_actions()
+      return self.read_action(player_name)
 
   def get_actions(self):
     if self.final:
@@ -16,7 +24,7 @@ class Connect4(LineBoardGame):
     for col in xrange(self.width):
       # Check if top column is empty, then we can move there
       if self.state[0][col] == 0:
-          actions.append(col)
+        actions.append(col)
     return actions
 
   def get_actions_mask_from_action(self, action):
@@ -51,17 +59,6 @@ class Connect4(LineBoardGame):
     self.turn = self.next_turn()
     return reward
 
-  #@staticmethod
-  #def new_state(state, action):
-  #  col, value = action
-  #  #assert col >= 0 and col < len(
-  #  #assert value in self.values
-  #  #assert not state[0][col]
-  #  for row in reversed(xrange(len(state))):
-  #    if not state[row][col]:
-  #      x = (state[row][:col] + (value,) + state[row][col+1:],)
-  #      return tuple(state[:row] + x + state[row+1:])
-
   def reverse_action(self, action):
     col, value = action
     assert col >= 0 and col < self.width
@@ -74,15 +71,19 @@ class Connect4(LineBoardGame):
         return
     assert False
 
-if __name__ == "__main__":
+def play_game():
+  """Simple class usage example."""
   sim = Connect4()
   player = 1
   while True:
     sim.display()
-    col = sim.read_action('Player %d' %  1)
+    col = sim.read_action("Player %d" %  1)
     reward = sim.perform_action((col, player))
     if reward:
-      print 'Player %d wins!' % player
+      print "Player %d wins!" % player
       sim.display()
       break
     player = (2 if player == 1 else 1)
+
+if __name__ == "__main__":
+  play_game()

@@ -1,4 +1,7 @@
+
+
 class LineBoardGame(object):
+
   def __init__(self, width, height, win_length):
     self.width = width
     self.height = height
@@ -12,14 +15,17 @@ class LineBoardGame(object):
     self.encoding = {0: ' ', 1: 'X', 2: '0'}
 
   def _check_range(self, xxs, yys):
-    return min(min(xxs), min(yys)) >= 0 and max(xxs) < self.height and max(yys) < self.width
+    return min(
+        min(xxs),
+        min(yys)) >= 0 and max(xxs) < self.height and max(yys) < self.width
 
   def _check_line(self, x, y, xx, yy):
     xxs = [x + xx * k for k in xrange(0, self.win_length)]
     yys = [y + yy * k for k in xrange(0, self.win_length)]
     if not self._check_range(xxs, yys):
       return 0
-    return self.state[x][y] != 0 and all([self.state[xx][yy] == self.state[x][y] for (xx,yy) in zip(xxs, yys)])
+    return self.state[x][y] != 0 and all([self.state[xx][yy] == self.state[x][y]
+                                          for (xx, yy) in zip(xxs, yys)])
 
   def collect_reward(self, last_x=None, last_y=None):
     # Check for any line of <win_line> values of the same type
@@ -45,7 +51,7 @@ class LineBoardGame(object):
     return 0
 
   def next_turn(self):
-    return (1 if self.turn == 2 else 2)
+    return 1 if self.turn == 2 else 2
 
   def reset(self):
     # Reset the board
@@ -56,24 +62,8 @@ class LineBoardGame(object):
   def get_state(self):
     return tuple([tuple(x) for x in self.state])
 
-  def read_action(self):
-    assert not 'You should override this method'
-
-  def get_actions(self):
-    assert not 'You should override this method'
-
-  def perform_action(self):
-    assert not 'You should override this method'
-
-  def reverse_action(self):
-    assert not 'You should override this method'
-
-  @staticmethod
-  def new_state(state, action):
-    assert not 'You should override this method'
-
   def display(self):
-    print ' ' * 3 + ' '.join([' %d ' % x for x in xrange(1, self.width + 1)]) 
+    print ' ' * 3 + ' '.join([' %d ' % x for x in xrange(1, self.width + 1)])
     print ' ' * 2 + '-' * (len(self.state[0]) * 4 + 1)
     for idx, line in enumerate(self.state):
       print idx + 1,

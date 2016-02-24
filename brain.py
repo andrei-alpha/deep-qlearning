@@ -4,12 +4,13 @@ import time
 import numpy as np
 import tensorflow as tf
 
-NUM_CORES = 8
+NUM_CORES = 12
 TENSORFLOW_CONFIG = tf.ConfigProto(inter_op_parallelism_threads=NUM_CORES, 
   intra_op_parallelism_threads=NUM_CORES)
 
 class Brain(object):
-  def __init__(self, width=None, height=None, output_size=None, learning_rate=0.01, decay=0.9, load_path=None):
+  def __init__(self, width=None, height=None, output_size=None,
+               learning_rate=0.01, decay=0.9, load_path=None):
     self.width = width
     self.height = height
     self.output_size = output_size
@@ -17,8 +18,6 @@ class Brain(object):
     # Hack to fix this problem: https://github.com/tensorflow/tensorflow/commit/430a054d6134f00e5188906bc4080fb7c5035ad5
     self.graph = tf.Graph()
     self.sess = tf.Session(graph=self.graph, config=TENSORFLOW_CONFIG)
-
-    # Currently we cannot load both the model and the same weights from disk
 
     with self.graph.as_default():
       # Initialize the weights
@@ -28,7 +27,7 @@ class Brain(object):
       self.X = tf.placeholder(tf.float32, [None, self.height, self.width], name="X")
       self.Y = tf.placeholder(tf.float32, [None, 1], name="Y")
       self.dropout = tf.placeholder(tf.float32, name="dropout")
-      
+
       # Softmax computes normalized scores for each action set
       self.actions_score = self.build_network(self.X, self.dropout)
       # We know the reward for only for one action in each state of the training set
@@ -43,22 +42,14 @@ class Brain(object):
       # Initialize all variables
       self.sess.run(tf.initialize_all_variables())
 
+      if load_path:
+        self.eval_only = True
+        self.load_model(load_path)
+      else:
+        self.eval_only = False
+
   def load_model(self, save_path):
     with self.graph.as_default():
-      # Initialize the weights
-      self.init_weights()
-
-      graph_def = tf.GraphDef()
-      graph_def.ParseFromString(open(os.path.join(save_path, 'model.pb'), 'r').read())
-      tf.import_graph_def(graph_def, name='')
-
-      # Restore all the variables used for training and eval
-      self.X = self.sess.graph.get_tensor_by_name("X:0")
-      self.Y = self.sess.graph.get_tensor_by_name("Y:0")
-      self.dropout = self.sess.graph.get_tensor_by_name("dropout:0")
-      self.actions_mask = self.sess.graph.get_tensor_by_name("actions_mask:0")
-      self.masked_actions_score = self.sess.graph.get_tensor_by_name("masked_actions_score:0")
-
       # Load saved weights from checkpoint
       saver = tf.train.Saver(tf.all_variables())
       saver.restore(self.sess, os.path.join(save_path, 'checkpoint.data'))
@@ -121,7 +112,7 @@ class Brain(object):
 
     # Fully connected layers
     # Reshape conv2 output to fit dense layer input
-    dense1 = tf.reshape(drop2, [-1, self.weights['wd1'].get_shape().as_list()[0]]) 
+    dense1 = tf.reshape(drop2, [-1, self.weights['wd1'].get_shape().as_list()[0]])
     # Relu activation
     dense1 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd1']), self.biases['bd1']))
     dense2 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd2']), self.biases['bd2']))
@@ -140,7 +131,7 @@ class Brain(object):
       return full_path
 
   def train(self, (observations, actions_mask, rewards)):
-    if not self.train_opt: # Don't train loaded models
+    if self.eval_only: # Don't train loaded models
       return
 
     with self.graph.as_default():
