@@ -11,11 +11,11 @@ class QLearn(Agent):
                brain,
                name="QLearn",
                train_every_nth=5,
-               train_batch_size=30,
-               max_experience=100000,
+               train_batch_size=32,
+               max_experience=300000,
                exploration_period=10000,
-               epsilon_final=0.01,
-               discount_factor=0.5):
+               epsilon_final=0.015,
+               discount_factor=0.99):
     Agent.__init__(self, name)
     self.sim = sim
     self.brain = brain

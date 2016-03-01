@@ -4,7 +4,7 @@ import time
 import numpy as np
 import tensorflow as tf
 
-NUM_CORES = 12
+NUM_CORES = 8
 TENSORFLOW_CONFIG = tf.ConfigProto(inter_op_parallelism_threads=NUM_CORES, 
   intra_op_parallelism_threads=NUM_CORES)
 
@@ -13,6 +13,7 @@ class Brain(object):
                learning_rate=0.01, decay=0.9, load_path=None):
     self.width = width
     self.height = height
+    self.input_channels = 4
     self.output_size = output_size
 
     # Hack to fix this problem: https://github.com/tensorflow/tensorflow/commit/430a054d6134f00e5188906bc4080fb7c5035ad5
@@ -24,7 +25,7 @@ class Brain(object):
       self.init_weights()
 
       # tf Graph input
-      self.X = tf.placeholder(tf.float32, [None, self.height, self.width], name="X")
+      self.X = tf.placeholder(tf.float32, [None, self.height, self.width, self.input_channels], name="X")
       self.Y = tf.placeholder(tf.float32, [None, 1], name="Y")
       self.dropout = tf.placeholder(tf.float32, name="dropout")
 
@@ -57,32 +58,29 @@ class Brain(object):
   def init_weights(self):
     # Store layers weight & bias
     self.weights = {
-      # 4x4 conv, 1 input, 32 outputs
-      'wc1': tf.Variable(tf.random_normal([4, 4, 1, 32], stddev=0.1)),
+      # 4x4 conv, 3 input, 32 outputs
+      'wc1': tf.Variable(tf.truncated_normal([8, 8, self.input_channels, 32], stddev=0.01)),
       # 4x4 conv, 32 inputs, 64 outputs
-      'wc2': tf.Variable(tf.random_normal([4, 4, 32, 64], stddev=0.1)),
+      'wc2': tf.Variable(tf.truncated_normal([4, 4, 32, 64], stddev=0.01)),
       # fully connected, 7*7*64 inputs, 1024 outputs
-      'wd1': tf.Variable(tf.random_normal([self.height * self.width * 64, 1024], stddev=0.1)),
-      # fully connected, 1024 inputs, 1024 outputs
-      'wd2': tf.Variable(tf.random_normal([1024, 1024], stddev=0.1)),
+      'wc3': tf.Variable(tf.truncated_normal([2, 2, 64, 64], stddev=0.01)),
+      # fully connected, 7*7*64 inputs, 1024 outputs
+      'wd1': tf.Variable(tf.truncated_normal([self.width * self.height / 4, 512], stddev=0.01)),
       # 1024 inputs, 10 outputs (class prediction)
-      'out': tf.Variable(tf.random_normal([1024, self.output_size], stddev=0.1))
+      'out': tf.Variable(tf.truncated_normal([512, self.output_size], stddev=0.01))
     }
 
     self.biases = {
-      'bc1': tf.Variable(tf.zeros([32])),
-      'bc2': tf.Variable(tf.zeros([64])),
-      'bd1': tf.Variable(tf.zeros([1024])),
-      'bd2': tf.Variable(tf.zeros([1024])),
-      'out': tf.Variable(tf.zeros([self.output_size]))
+      'bc1': tf.Variable(tf.constant(0.01, shape=[32])),
+      'bc2': tf.Variable(tf.constant(0.01, shape=[64])),
+      'bc3': tf.Variable(tf.constant(0.01, shape=[64])),
+      'bd1': tf.Variable(tf.constant(0.01, shape=[512])),
+      'out': tf.Variable(tf.constant(0.01, shape=[self.output_size]))
     }
 
-  def conv2d(self, name, lhs, w, b):
-    conv = tf.nn.conv2d(lhs, w, strides=[1, 1, 1, 1], padding='SAME')
+  def conv2d(self, name, lhs, w, b, stride):
+    conv = tf.nn.conv2d(lhs, w, strides=[1, stride, stride, 1], padding='SAME')
     return tf.nn.relu(tf.nn.bias_add(conv, b), name=name)
-
-  def norm(self, name, l_input, lsize=4):
-    return tf.nn.lrn(l_input, lsize, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name=name)
 
   def max_pool(self, name, lhs, k=2):
     return tf.nn.max_pool(lhs, ksize=[1, k, k, 1], strides=[1, k, k, 1],
@@ -90,35 +88,31 @@ class Brain(object):
 
   def build_network(self, X, dropout):
     # Reshape input data
-    X = tf.reshape(X, [-1, self.height, self.width, 1])
+    X = tf.reshape(X, [-1, self.height, self.width, self.input_channels])
 
     # Convolution Layer
-    conv1 = self.conv2d("conv1", X, self.weights['wc1'], self.biases['bc1'])
+    conv1 = self.conv2d("conv1", X, self.weights['wc1'], self.biases['bc1'], 4)
      # Max Pooling (down-sampling)
-    # pool1 = self.max_pool('pool1', conv1, k=2)
-    # Apply Normalization
-    norm1 = self.norm('norm1', conv1, lsize=4)
-    # Apply Dropout
-    drop1 = tf.nn.dropout(norm1, dropout)
+    pool1 = self.max_pool('pool1', conv1, k=2)
 
     # Convolution Layer
-    conv2 = self.conv2d("conv2", drop1, self.weights['wc2'], self.biases['bc2'])
+    conv2 = self.conv2d("conv2", pool1, self.weights['wc2'], self.biases['bc2'], 2)
     # Max Pooling (down-sampling)
     # pool2 = self.max_pool('pool2', conv2, k=2)
-    # Apply Normalization
-    norm2 = self.norm('norm2', conv2, lsize=4)
-    # Apply Dropout
-    drop2 = tf.nn.dropout(norm2, dropout)
+
+    # Convolution Layer
+    conv3 = self.conv2d("conv3", conv2, self.weights['wc3'], self.biases['bc3'], 1)
+    # Max Pooling (down-sampling)
+    # pool3 = self.max_pool('pool3', conv3, k=2)
 
     # Fully connected layers
     # Reshape conv2 output to fit dense layer input
-    dense1 = tf.reshape(drop2, [-1, self.weights['wd1'].get_shape().as_list()[0]])
+    dense1 = tf.reshape(conv3, [-1, self.weights['wd1'].get_shape().as_list()[0]])
     # Relu activation
-    dense1 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd1']), self.biases['bd1']))
-    dense2 = tf.nn.relu(tf.add(tf.matmul(dense1, self.weights['wd2']), self.biases['bd2']))
+    dense1 = tf.nn.tanh(tf.add(tf.matmul(dense1, self.weights['wd1']), self.biases['bd1']))
 
     # Return the Q-value prediction for each action
-    return tf.add(tf.matmul(dense2, self.weights['out']), self.biases['out'])
+    return tf.add(tf.matmul(dense1, self.weights['out']), self.biases['out'])
 
   def save(self, path):
     """Save the current model as a serialized proto for later use."""
@@ -130,13 +124,42 @@ class Brain(object):
       saver.save(self.sess, os.path.join(full_path, "checkpoint.data"))
       return full_path
 
+  def transform(self, state):
+    new_state = []
+    for line in state:
+      new_line = []
+      for x in line:
+        #if x == 0:
+        #  new_line.append([0])
+        #elif x == 1:
+        #  new_line.append([1])
+        #else:
+        #  new_line.append([2])
+        if x == 0:
+          new_line.append([1, 0, 0, 0])
+        elif x == 1:
+          new_line.append([0, 1, 0, 0])
+        elif x == 2:
+          new_line.append([0, 0, 1, 0])
+        else:
+          new_line.append([0, 0, 0, 1])
+
+        # if x == 0:
+        #  new_line.append([1, 0, 0])
+        # elif x == 1:
+        #  new_line.append([0, 1, 0])
+        # else:
+        #  new_line.append([0, 0, 1])
+      new_state.append(new_line)
+    return new_state
+
   def train(self, (observations, actions_mask, rewards)):
     if self.eval_only: # Don't train loaded models
       return
 
     with self.graph.as_default():
       rewards = [[x] for x in rewards]
-      observations = [[list(x) for x in obs] for obs in observations]
+      observations = [self.transform(obs) for obs in observations]
       actions_mask = [list(x) for x in actions_mask]
       #mask = []
       #for x, reward in enumerate(rewards):
@@ -154,11 +177,10 @@ class Brain(object):
 
   def eval(self, observation, actions_mask):
     with self.graph.as_default():
-      observation = [[list(x) for x in observation]]
+      observation = [self.transform(observation)]
       actions_mask = [actions_mask]
 
-      ret = self.sess.run(self.masked_actions_score, feed_dict={self.X: observation, 
-          self.dropout: 1.0, self.actions_mask: actions_mask})
+      ret = self.sess.run(self.masked_actions_score, feed_dict={self.X: observation, self.dropout: 1.0, self.actions_mask: actions_mask})
 
       if False:
         print 'scores:'

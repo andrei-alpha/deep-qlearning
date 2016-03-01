@@ -1,3 +1,4 @@
+import numpy as np
 from random import choice
 
 
@@ -33,6 +34,7 @@ class MinMax(Agent):
         return (score, level)
 
     scores, comb_scores = [], []
+    np.random.shuffle(actions)
     for action in actions:
       sim.perform_action((action, player))
       val, lvl = self.choose_action(sim, level + 1, alpha, beta)

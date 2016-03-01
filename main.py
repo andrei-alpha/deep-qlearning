@@ -11,20 +11,22 @@ from agents import (
 )
 from brain import Brain
 from connect4 import Connect4
+from breakout import Breakout
+from dummy_game import DummyGame
 from deepq import QLearn
 from tictactoe import TicTacToe
 
 new_models = 20
-win_threshold_percentage = 90
+win_threshold_percentage = 50
 win_threshold_games = 300
 train_games = 3000
-stats_frequency = 100
-minmax_level = 6
+stats_frequency = 5
+minmax_level = 4
 models_root = "data"
 run_mode = "train"  # Can be either train or eval
 eval_mode = "human" # Can be either human, minmax or random
-eval_model = "data/model_140438712"
-train_mode = "minmax" # Can be either mixt, minmax or random
+eval_model = "data/model_95940496"
+train_mode = "single" # Can be either mixt, minmax, random, single
 
 class Scorer(object):
   """Simple class to keep track of score, game duration and avg moves."""
@@ -39,6 +41,8 @@ class Scorer(object):
     return self.results[len(self.results) - n:].count(val)
 
   def average(self, sum_type, n):
+    if sum_type == "score":
+      return sum([x for x in self.results[len(self.results) - n:]]) / n
     index = (0 if sum_type == "time" else 1)
     return sum([x[index] for x in self.stats[len(self.stats) - n:]]) / n
 
@@ -50,12 +54,24 @@ class Scorer(object):
     if self.games % stats_frequency == 0:
       p1_wins = self.count(1, self.frequency) * 100 / self.frequency
       p2_wins = self.count(2, self.frequency) * 100 / self.frequency
-      avg_games_per_sec = 1000.0 / self.average("time", self.frequency)
+      avg_games_per_min = (60 * 1000.0) / self.average("time", self.frequency)
       avg_moves = self.average("moves", self.frequency)
-      print("Games: %d %s wins: %d%s %s wins: %d%s games/sec: %d "
+      print("Games: %d %s wins: %d%s %s wins: %d%s games/min: %d "
             "avg_moves: %d") % (self.games, players[0].name, p1_wins, "%",
                                 players[1].name, p2_wins, "%",
-                                avg_games_per_sec, avg_moves)
+                                avg_games_per_min, avg_moves)
+
+  def record_result_single(self, player, score, start_time, no_moves):
+    game_duration = int((time.time() - start_time) * 1000)
+    self.results.append(score)
+    self.stats.append((game_duration, no_moves))
+    self.games += 1
+    if self.games % stats_frequency == 0:
+      avg_score = self.average("score", self.frequency)
+      avg_games_per_min = (60 * 1000.0) / self.average("time", self.frequency)
+      avg_moves = self.average("moves", self.frequency)
+      print("Games: %d %s avg_score: %d games/min: %d avg_moves: %d"
+        ) % (self.games, player.name, avg_score, avg_games_per_min, avg_moves)
 
   def get_statistics(self, last_games):
     p1_wins = self.count(1, last_games) * 100 / last_games
@@ -63,7 +79,7 @@ class Scorer(object):
     return p1_wins, p2_wins
 
 
-def play_game(players, sim, scorer, display_board=False):
+def play_game_with_opponent(players, sim, scorer, display_board=False):
   """Clasic turn based game loop."""
   start_time = time.time()
   idx, prev_state, prev_action = 0, None, None
@@ -96,15 +112,36 @@ def play_game(players, sim, scorer, display_board=False):
     idx ^= 1
   sim.reset()
 
+def play_single_player_game(player, sim, scorer, display_board=False):
+  """Single player game loop."""
+  start_time = time.time()
+  for moves in itertools.count(start=1):
+    # Get current state from game emulator
+    state = sim.get_state()
+    action = player.choose_action(sim)
+    reward = sim.perform_action(action)
+    if display_board:
+      sim.display()
+
+    player.learn(state, action, reward)
+
+    if not sim.get_actions(): # Game has ended
+      score = sim.get_score()
+      scorer.record_result_single(player, score, start_time, moves)
+      break
+  sim.reset()
+
 def test():
   sim = Connect4()
   brain = Brain(sim.width, sim.height, sim.actions_count, load_path=eval_model)
   opponent = QLearn(sim, brain, "AI", exploration_period=0,
                     discount_factor=0.9)
 
+  display = False
   scorer = Scorer(stats_frequency)
   if eval_mode == "human":
     player = HumanPlayer("Player")
+    display = True
   elif eval_mode == "random":
     player = RandomPlayer()
   elif eval_mode == "minmax":
@@ -114,9 +151,9 @@ def test():
       "(human|random|minmax)") % eval_mode
 
   while True:
-    play_game([opponent, player], sim, scorer)
+    play_game_with_opponent([opponent, player], sim, scorer, display_board=display)
 
-def train():
+def train_with_opponent():
   sim = Connect4()
   if train_mode == "mixt":
     opponents = [RandomPlayer("Rand")]
@@ -154,8 +191,8 @@ def train():
                              sim.height,
                              sim.actions_count,
                              load_path=model_path)
-          opponents.append(QLearn(sim, prev_brain, "V" + str(step)),
-                                  exploration_period=0, discount_factor=0.9)
+          opponents.append(QLearn(sim, prev_brain, "V" + str(step),
+                                  exploration_period=0, discount_factor=0.9))
           print "-" * 70
           print("New model wins %d%s against previous models after "
                 "%d games") % (win_statistics, "%", games)
@@ -165,15 +202,29 @@ def train():
 
       opponent = np.random.choice(opponents, 1, p)[0]
       players = [player, opponent]
-      play_game(players, sim, scorer)
+      play_game_with_opponent(players, sim, scorer)
 
   human_player = HumanPlayer("Player")
   while True:
-    play_game([opponents[-1], human_player], sim, scorer)
+    play_game_with_opponent([opponents[-1], human_player], sim, scorer)
 
+def train_single_player():
+  sim = DummyGame() # Breakout()
+  brain = Brain(sim.width, sim.height, sim.actions_count)
+  player = QLearn(sim, brain, "AI")
+  scorer = Scorer(stats_frequency)
+
+  for games in xrange(train_games):
+    play_single_player_game(player, sim, scorer, display_board=True)
+  # Save the model to disk and load it as an inference only model
+  model_path = brain.save(models_root)
+  print 'Saved trained model to', model_path
 
 if __name__ == "__main__":
   if run_mode == "train":
-    train()
+    if train_mode == "single":
+      train_single_player()
+    else:
+      train_with_opponent()
   else:
     test()
